@@ -1,0 +1,525 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sns-topic.html
+  # Reference: AWS::SNS::Topic
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: 'TradeReads - SNS'
+      TopicName: BookAdded
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html
+  # Reference: AWS::Lambda::Function
+  RegisterLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "index.zip"
+      FunctionName: ctp-register
+      Environment:
+        Variables:
+          "SNS_ARN": !Ref SNSTopic
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html
+  # Reference: AWS::ApiGatewayV2::Api
+  TradereadsAPI:
+    Type: "AWS::ApiGatewayV2::Api"
+    Properties:
+      Name: "TradeReads"
+      ProtocolType: "HTTP"
+      # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-apigatewayv2-api-cors.html
+      # Reference: AWS::ApiGatewayV2::Api Cors
+      CorsConfiguration:
+        AllowMethods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - "*"
+      
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-permission.html
+  # Reference: AWS::Lambda::Permission
+  LambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref RegisterLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-integration.html#aws-resource-apigatewayv2-integration--examples
+  # Reference: AWS::ApiGatewayV2::Integration
+  FunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - RegisterLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RegisterLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-route.html#aws-resource-apigatewayv2-route--examples
+  # Reference: AWS::ApiGatewayV2::Route
+  MyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - FunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "POST /register"
+      Target: !Sub "integrations/${FunctionIntegration}"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-stage.html#aws-resource-apigatewayv2-stage-syntax
+  # Reference: AWS::ApiGatewayV2::Stage
+  APIGatewayStage:
+    Type: "AWS::ApiGatewayV2::Stage"
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      StageName: "$default"
+      AutoDeploy: true
+
+  LoginLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "login.zip"
+      FunctionName: ctp-login
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  LoginLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref LoginLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  LoginFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - LoginLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LoginLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  LoginMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - LoginFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "POST /login"
+      Target: !Sub "integrations/${LoginFunctionIntegration}"
+  
+  GetAllBooksLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "getallbooks.zip"
+      FunctionName: ctp-getallbooks
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  GetAllBooksLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref GetAllBooksLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  GetAllBooksFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - GetAllBooksLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetAllBooksLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  GetAllBooksMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - GetAllBooksFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "GET /books"
+      Target: !Sub "integrations/${GetAllBooksFunctionIntegration}"
+
+  AddBookLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "addbook.zip"
+      FunctionName: ctp-addbook
+      Environment:
+        Variables:
+          "SNS_ARN": !Ref SNSTopic
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  AddBookLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref AddBookLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  AddBookFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - AddBookLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AddBookLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  AddBookMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - AddBookFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "POST /books"
+      Target: !Sub "integrations/${AddBookFunctionIntegration}"
+  
+  GetBookByIdLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "getbook_id.zip"
+      FunctionName: ctp-getbookbyid
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  GetBookByIdLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref GetBookByIdLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  GetBookByIdFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - GetBookByIdLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetBookByIdLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  GetBookByIdMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - GetBookByIdFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "GET /books/{id}"
+      Target: !Sub "integrations/${GetBookByIdFunctionIntegration}"
+
+  GetBookByOwnerLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "getbook_owner.zip"
+      FunctionName: ctp-getbookbyowner
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  GetBookByOwnerLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref GetBookByOwnerLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  GetBookByOwnerFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - GetBookByOwnerLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetBookByOwnerLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  GetBookByOwnerMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - GetBookByOwnerFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "GET /book/owner/{id}"
+      Target: !Sub "integrations/${GetBookByOwnerFunctionIntegration}"
+
+  DeleteBookLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "deletebook.zip"
+      FunctionName: ctp-deletebook
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  DeleteBookLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref DeleteBookLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  DeleteBookFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - DeleteBookLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteBookLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  DeleteBookMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - DeleteBookFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "DELETE /books/{id}"
+      Target: !Sub "integrations/${DeleteBookFunctionIntegration}"
+  
+  EditBookLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "editbook.zip"
+      FunctionName: ctp-editbook
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  EditBookLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref EditBookLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  EditBookFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - EditBookLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EditBookLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  EditBookMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - EditBookFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "PUT /books/{id}"
+      Target: !Sub "integrations/${EditBookFunctionIntegration}"
+  
+  TakeRequestLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "takerequest.zip"
+      FunctionName: ctp-takerequest
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  TakeRequestLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref TakeRequestLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  TakeRequestFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - TakeRequestLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TakeRequestLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  TakeRequestMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - TakeRequestFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "POST /takerequest"
+      Target: !Sub "integrations/${TakeRequestFunctionIntegration}"
+  
+  TradeRequestLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: "smcloudproject"
+        S3Key: "traderequest.zip"
+      FunctionName: ctp-traderequest
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::947385954424:role/LabRole
+      Timeout: 60
+
+  TradeRequestLambdaExecutionPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref TradeRequestLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TradereadsAPI}/*/*"
+
+  TradeRequestFunctionIntegration:
+    Type: "AWS::ApiGatewayV2::Integration"
+    DependsOn:
+      - TradeRequestLambdaFunction
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      IntegrationType: "AWS_PROXY"
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TradeRequestLambdaFunction.Arn}/invocations"
+      PayloadFormatVersion: "2.0"
+
+  TradeRequestMyLambdaRoute:
+    Type: "AWS::ApiGatewayV2::Route"
+    DependsOn:
+      - TradeRequestFunctionIntegration
+    Properties:
+      ApiId: !Ref TradereadsAPI
+      RouteKey: "POST /traderequest"
+      Target: !Sub "integrations/${TradeRequestFunctionIntegration}"
+  
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-secretsmanager-secret.html#aws-resource-secretsmanager-secret--examples
+  # Reference: Creating a secret with a hardcoded password
+  MySecret:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name: 'smSecret'
+      Description: 'Credentials for nodemailer'
+      SecretString: "{\"email\":\"smithpatel2599@gmail.com\",\"password\":\"hlywihpytkijkvpv\"}"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html#aws-resource-dynamodb-table--examples
+  # Reference: AWS::DynamoDB::Table
+  UserTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: users
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  
+  BooksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: books
+      AttributeDefinitions:
+        - AttributeName: book_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: book_id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticbeanstalk-environment.html#aws-resource-elasticbeanstalk-environment--examples
+  # Reference: Custom or Supported Platform 
+  TradereadsFrontend:
+    Type: "AWS::ElasticBeanstalk::Application"
+    Properties:
+      ApplicationName: "TradeReads"
+      Description: "Application"
+
+  ApplicationVersion:
+    Type: "AWS::ElasticBeanstalk::ApplicationVersion"
+    Properties:
+      ApplicationName: !Ref TradereadsFrontend
+      Description: "Application Version"
+      SourceBundle:
+        S3Bucket: "smcloudproject"
+        S3Key: "tradereads10.zip"
+
+  TradeReadsEnvironment:
+    Type: "AWS::ElasticBeanstalk::Environment"
+    Properties:
+      ApplicationName: !Ref TradereadsFrontend
+      Description: "Environment"
+      EnvironmentName: "TradeReads"
+      SolutionStackName: "64bit Amazon Linux 2 v5.8.4 running Node.js 18"
+      VersionLabel: !Ref ApplicationVersion
+      OperationsRole: "arn:aws:iam::947385954424:role/LabRole"
+      Tier:
+        Name: "WebServer"
+        Type: "Standard"
+      OptionSettings:
+        - Namespace: "aws:elasticbeanstalk:environment"
+          OptionName: EnvironmentType
+          Value: "SingleInstance"
+        - Namespace: "aws:elasticbeanstalk:environment"
+          OptionName: ServiceRole
+          Value: arn:aws:iam::947385954424:role/LabRole
+        - Namespace: "aws:autoscaling:launchconfiguration"
+          OptionName: "IamInstanceProfile"
+          Value: "LabInstanceProfile"
+        - Namespace: "aws:elasticbeanstalk:application:environment"
+          OptionName: "REACT_APP_API_URL"
+          Value: !Sub "https://${TradereadsAPI}.execute-api.${AWS::Region}.amazonaws.com"  
+
